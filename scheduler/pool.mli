@@ -15,9 +15,10 @@ module Make (Item : S.ITEM) : sig
   type worker
   (** A connected worker. *)
 
-  val create : name:string -> db:Dao.t -> t
-  (** [create ~name ~db] is a pool that reports metrics tagged with [name] and
-      stores cache information in [db]. *)
+  val create : ?active:Active.t -> db:Dao.t -> string -> t
+  (** [create ~db name] is a pool that reports metrics tagged with [name] and
+      stores cache information in [db].
+      @param active Can be used to pause submitting jobs to workers globally. *)
 
   val register : t -> name:string -> (worker, [> `Name_taken]) result
   (** [register t ~name] returns a queue for worker [name]. *)

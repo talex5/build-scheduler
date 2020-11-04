@@ -167,6 +167,7 @@ module Make (Item : S.ITEM) = struct
   type t = {
     pool : string;                          (* For metrics reporting and DB *)
     db : Dao.t;
+    active : Active.t;
     mutable main : [
       | `Backlog of Backlog.t               (* No workers are ready *)
       | `Ready of worker Lwt_dllist.t       (* No work is available. *)
@@ -257,6 +258,7 @@ module Make (Item : S.ITEM) = struct
   let pop worker =
     let t = worker.parent in
     let rec aux () =
+      Active.await t.active >>= fun () ->
       match worker.state with
       | `Finished -> Lwt_result.fail `Finished
       | `Inactive (ready, _) -> ready >>= aux
@@ -435,12 +437,13 @@ module Make (Item : S.ITEM) = struct
     | `Running _ -> true
     | `Inactive _ | `Finished -> false
 
-  let create ~name ~db =
+  let create ?(active=Active.create ()) ~db name =
     {
       pool = name;
       db;
       main = `Backlog (Backlog.create ());
       workers = Worker_map.empty;
+      active;
     }
 
   let dump_queue ?(sep=Fmt.sp) pp f q =
@@ -479,13 +482,19 @@ module Make (Item : S.ITEM) = struct
     | `Ready q ->
       Fmt.pf f "(ready) %a" (dump_queue pp_worker) q
 
-  let show f {pool = _; db = _; main; workers} =
-    Fmt.pf f "@[<v>queue: @[%a@]@,@[<v2>registered:%a@]@]@."
+  let pp_active f active =
+    if not (Active.get active) then
+      Fmt.pf f "(scheduler is paused)@,"
+
+  let show f {pool = _; db = _; active; main; workers} =
+    Fmt.pf f "@[<v>%aqueue: @[%a@]@,@[<v2>registered:%a@]@]@."
+      pp_active active
       dump_main main
       dump_workers workers
 
-  let dump f {pool; db; main; workers} =
-    Fmt.pf f "@[<v>queue: @[%a@]@,@[<v2>registered:%a@]@,cached: @[%a@]@]@."
+  let dump f {pool; db; active; main; workers} =
+    Fmt.pf f "@[<v>%aqueue: @[%a@]@,@[<v2>registered:%a@]@,cached: @[%a@]@]@."
+      pp_active active
       dump_main main
       dump_workers workers
       Dao.dump (db, pool)

@@ -52,7 +52,7 @@ let submit ~urgent pool job =
 (* Assign three jobs to two workers. *)
 let simple () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"simple" in
+  let pool = Pool.create ~db "simple" in
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   let w2 = Pool.register pool ~name:"worker-2" |> Result.get_ok in
   Pool.set_active w1 true;
@@ -71,7 +71,7 @@ let simple () =
 (* Bias assignment towards workers that have things cached. *)
 let cached_scheduling () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"cached_scheduling" in
+  let pool = Pool.create ~db "cached_scheduling" in
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   let w2 = Pool.register pool ~name:"worker-2" |> Result.get_ok in
   Pool.set_active w1 true;
@@ -137,7 +137,7 @@ let cached_scheduling () =
 (* Bias assignment towards workers that have things cached, but not so much that it takes longer. *)
 let unbalanced () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"unbalanced" in
+  let pool = Pool.create ~db "unbalanced" in
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   let w2 = Pool.register pool ~name:"worker-2" |> Result.get_ok in
   Pool.set_active w1 true;
@@ -166,7 +166,7 @@ let unbalanced () =
 (* There are no workers available sometimes. *)
 let no_workers () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"no_workers" in
+  let pool = Pool.create ~db "no_workers" in
   submit pool ~urgent:false @@ job "job1" ~cache_hint:"a";
   submit pool ~urgent:false @@ job "job2" ~cache_hint:"a";
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
@@ -185,7 +185,7 @@ let no_workers () =
 (* We remember cached locations across restarts. *)
 let persist () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"persist" in
+  let pool = Pool.create ~db "persist" in
   (* worker-1 handles job1 *)
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   Pool.set_active w1 true;
@@ -193,7 +193,7 @@ let persist () =
   let _ = Pool.pop w1 in
   Pool.release w1;
   (* Create a new instance of the scheduler with the same db. *)
-  let pool = Pool.create ~db ~name:"persist" in
+  let pool = Pool.create ~db "persist" in
   (* Worker 2 registers first, and so would normally get the first job: *)
   let w2 = Pool.register pool ~name:"worker-2" |> Result.get_ok in
   Pool.set_active w2 true;
@@ -213,7 +213,7 @@ let persist () =
 (* Urgent jobs go first. *)
 let urgent () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"urgent" in
+  let pool = Pool.create ~db "urgent" in
   submit pool ~urgent:false @@ job "job1" ~cache_hint:"a";
   submit pool ~urgent:true  @@ job "job2" ~cache_hint:"a";
   submit pool ~urgent:true  @@ job "job3" ~cache_hint:"a";
@@ -241,7 +241,7 @@ let urgent () =
 (* Workers can be paused and resumed. *)
 let inactive () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"inactive" in
+  let pool = Pool.create ~db "inactive" in
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   Pool.set_active w1 true;
   let w1a = Pool.pop w1 in
@@ -284,7 +284,7 @@ let inactive () =
 (* The user cancels while the item is assigned. *)
 let cancel_worker_queue () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"cancel_worker_queue" in
+  let pool = Pool.create ~db "cancel_worker_queue" in
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   let w2 = Pool.register pool ~name:"worker-2" |> Result.get_ok in
   Pool.set_active w1 true;
@@ -330,7 +330,7 @@ let cancel_worker_queue () =
 (* A worker is marked as inactive. Its items go back on the main queue. *)
 let push_back () =
   with_test_db @@ fun db ->
-  let pool = Pool.create ~db ~name:"push_back" in
+  let pool = Pool.create ~db "push_back" in
   let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
   let w2 = Pool.register pool ~name:"worker-2" |> Result.get_ok in
   Pool.set_active w1 true;
@@ -356,6 +356,42 @@ let push_back () =
     \  worker-1 (0): (inactive)\n\
     cached: a: [worker-1]\n" (Fmt.to_to_string Pool.dump pool);
   Pool.set_active w1 true;
+  flush_queue w1 ~expect:["job2"; "job3"]
+
+let pause_service () =
+  let module Active = Cluster_scheduler.Active in
+  with_test_db @@ fun db ->
+  let active = Active.create () in
+  let pool = Pool.create ~db ~active "pause-service" in
+  Active.set active false;
+  let w1 = Pool.register pool ~name:"worker-1" |> Result.get_ok in
+  Pool.set_active w1 true;
+  let w1a = Pool.pop w1 in
+  submit pool ~urgent:false @@ job "job1" ~cache_hint:"a";
+  submit pool ~urgent:false @@ job "job2" ~cache_hint:"a";
+  submit pool ~urgent:false @@ job "job3" ~cache_hint:"a";
+  Lwt.pause () >>= fun () ->
+  Alcotest.(check string) "Jobs queued" "\
+    (scheduler is paused)\n\
+    queue: (backlog) [job3 job2 job1] : []\n\
+    registered:\n\
+    \  worker-1 (0): []\n\
+    cached: \n" (Fmt.to_to_string Pool.dump pool);
+  Active.set active true;
+  Alcotest.(check string) "Jobs released" "\
+    queue: (backlog) [job3 job2] : []\n\
+    registered:\n\
+    \  worker-1 (0): []\n\
+    cached: a: [worker-1]\n" (Fmt.to_to_string Pool.dump pool);
+  Alcotest.(check pop_result) "Worker 1 / job 1" (Ok "job1") (job_state w1a);
+  Active.set active false;
+  Alcotest.(check string) "Paused again" "\
+    (scheduler is paused)\n\
+    queue: (backlog) [job3 job2] : []\n\
+    registered:\n\
+    \  worker-1 (0): []\n\
+    cached: a: [worker-1]\n" (Fmt.to_to_string Pool.dump pool);
+  Active.set active true;
   flush_queue w1 ~expect:["job2"; "job3"]
 
 let test_case name fn =
@@ -387,4 +423,5 @@ let suite = [
   test_case "inactive" inactive;
   test_case "cancel_worker_queue" cancel_worker_queue;
   test_case "push_back" push_back;
+  test_case "pause_service" pause_service;
 ]

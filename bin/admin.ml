@@ -31,7 +31,11 @@ let show cap_path pool =
     Cluster_api.Pool_admin.show pool >|= fun status ->
     print_endline (String.trim status)
 
-let set_active active cap_path pool worker =
+let set_service_active active cap_path =
+  run cap_path @@ fun admin_service ->
+  Cluster_api.Admin.set_active admin_service active
+
+let set_worker_active active cap_path pool worker =
   run cap_path @@ fun admin_service ->
   Capability.with_ref (Cluster_api.Admin.pool admin_service pool) @@ fun pool ->
   match worker with
@@ -126,14 +130,24 @@ let show =
   Term.(const show $ connect_addr $ Arg.value pool_pos),
   Term.info "show" ~doc
 
+let pause_service =
+  let doc = "Stop giving jobs to workers until unpaused" in
+  Term.(const (set_service_active false) $ connect_addr),
+  Term.info "pause-service" ~doc
+
+let unpause_service =
+  let doc = "Resume giving jobs to workers" in
+  Term.(const (set_service_active true) $ connect_addr),
+  Term.info "unpause-service" ~doc
+
 let pause_worker =
   let doc = "Set a worker to be unavailable for further jobs" in
-  Term.(const (set_active false) $ connect_addr $ Arg.required pool_pos $ worker),
+  Term.(const (set_worker_active false) $ connect_addr $ Arg.required pool_pos $ worker),
   Term.info "pause-worker" ~doc
 
 let unpause_worker =
   let doc = "Resume a paused worker" in
-  Term.(const (set_active true) $ connect_addr $ Arg.required pool_pos $ worker),
+  Term.(const (set_worker_active true) $ connect_addr $ Arg.required pool_pos $ worker),
   Term.info "unpause-worker" ~doc
 
 let update =
@@ -141,7 +155,7 @@ let update =
   Term.(const update $ connect_addr $ Arg.required pool_pos $ worker),
   Term.info "update" ~doc
 
-let cmds = [show; pause_worker; unpause_worker; update]
+let cmds = [show; pause_service; unpause_service; pause_worker; unpause_worker; update]
 
 let default_cmd =
   let doc = "a command-line admin client for the build-scheduler" in

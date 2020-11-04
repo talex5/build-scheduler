@@ -136,6 +136,12 @@ interface PoolAdmin {
 }
 
 interface Admin {
-  pools @0 () -> (names :List(Text));
-  pool  @1 (name :Text) -> (pool :PoolAdmin);
+  pools     @0 () -> (names :List(Text));
+  pool      @1 (name :Text) -> (pool :PoolAdmin);
+
+  setActive @2 (active :Bool) -> ();
+  # Set whether the scheduler as a whole is active. Jobs will only be given to
+  # workers while the scheduler is active.
+
+  getActive @3 () -> (active :Bool);
 }

@@ -195,7 +195,17 @@ dune exec -- ocluster-admin \
   show ./capnp-secrets/admin.cap linux-x86_64
 ```
 
-To pause a worker, give the pool and the worker's name, e.g.:
+To pause the service (so that no new jobs will be given to any workers):
+
+```
+dune exec -- ocluster-admin \
+  pause-service ./capnp-secrets/admin.cap
+```
+
+This is useful if you want to upgrade the service without cancelling any in-progress jobs.
+Use `unpause-service` to resume.
+
+To pause a single worker, give the pool and the worker's name, e.g.:
 
 ```
 dune exec -- ocluster-admin \

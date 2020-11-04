@@ -37,8 +37,8 @@ module Pool_api = struct
     cond : unit Lwt_condition.t;    (* Fires when a worker joins *)
   }
 
-  let create ~name ~db =
-    let pool = Pool.create ~name ~db in
+  let create ~name ~db ~active =
+    let pool = Pool.create name ~db ~active in
     let workers = Hashtbl.create 10 in
     let cond = Lwt_condition.create () in
     { pool; workers; cond }
@@ -144,6 +144,7 @@ end
 
 type t = {
   pools : Pool_api.t String.Map.t;
+  active : Active.t;
 }
 
 let registration_services t =
@@ -172,16 +173,20 @@ let admin_service t =
     | None -> Capability.broken (Capnp_rpc.Exception.v "No such pool")
     | Some pool_api -> Pool_api.admin_service pool_api
   in
-  Cluster_api.Admin.local ~pools ~pool
+  let get_active () = Active.get t.active in
+  let set_active = Active.set t.active in
+  Cluster_api.Admin.local ~pools ~pool ~get_active ~set_active
 
 let create ~db pools =
   let db = Pool.Dao.init db in
+  let active = Active.create () in
   let pools =
     List.fold_left
-      (fun acc name -> String.Map.add name (Pool_api.create ~name ~db) acc)
+      (fun acc name -> String.Map.add name (Pool_api.create ~name ~db ~active) acc)
       String.Map.empty pools
   in
-  { pools }
+  { pools; active }
 
 module S = S
 module Pool = Pool
+module Active = Active
