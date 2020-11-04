@@ -126,22 +126,22 @@ let show =
   Term.(const show $ connect_addr $ Arg.value pool_pos),
   Term.info "show" ~doc
 
-let pause =
+let pause_worker =
   let doc = "Set a worker to be unavailable for further jobs" in
   Term.(const (set_active false) $ connect_addr $ Arg.required pool_pos $ worker),
-  Term.info "pause" ~doc
+  Term.info "pause-worker" ~doc
 
-let unpause =
+let unpause_worker =
   let doc = "Resume a paused worker" in
   Term.(const (set_active true) $ connect_addr $ Arg.required pool_pos $ worker),
-  Term.info "unpause" ~doc
+  Term.info "unpause-worker" ~doc
 
 let update =
   let doc = "Drain and then update worker(s)" in
   Term.(const update $ connect_addr $ Arg.required pool_pos $ worker),
   Term.info "update" ~doc
 
-let cmds = [show; pause; unpause; update]
+let cmds = [show; pause_worker; unpause_worker; update]
 
 let default_cmd =
   let doc = "a command-line admin client for the build-scheduler" in

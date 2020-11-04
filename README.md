@@ -199,11 +199,12 @@ To pause a worker, give the pool and the worker's name, e.g.:
 
 ```
 dune exec -- ocluster-admin \
-  pause ./capnp-secrets/admin.cap linux-x86_64 my-host
+  pause-worker ./capnp-secrets/admin.cap linux-x86_64 my-host
 ```
 
 A paused worker will not be assigned any more items until it is unpaused, but
-it will continue with any jobs it is already running. Use `unpause` to resume it.
+it will continue with any jobs it is already running. Use `unpause-worker` to resume it.
+Note that if a worker disconnects and reconnects, it will reconnect unpaused.
 
 To update all workers in a pool:
 
